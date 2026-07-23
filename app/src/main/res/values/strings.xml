@@ -1,0 +1,97 @@
+<resources>
+    <string name="app_name">OfflineMesh</string>
+    <!-- App drawer/launcher shows this instead of "OfflineMesh" — basic disguise so
+         a casual phone-glance doesn't immediately reveal what the app is. This is
+         cosmetic only (see README "App disguise" section for real limitations) —
+         change to whatever generic app name fits best where you are. -->
+    <string name="app_display_label">Notes</string>
+
+    <!-- Starting template for the offline "Know Your Rights" note. Deliberately a
+         fill-in-the-blank template, NOT asserted legal facts — laws and correct
+         helpline numbers vary by state/country and change over time, so this app
+         can't respond with details from a knowledge cutoff and expect them to
+         still be correct or complete on the ground. Fill this in with a local
+         lawyer/legal-aid or human-rights org BEFORE you need it. -->
+    <string name="know_your_rights_default">
+Ye ek KHAALI TEMPLATE hai — protest se pehle, kisi local lawyer/legal aid/human
+rights organisation se baat karke isko sahi, up-to-date info se bharo. Jo bhi
+yahan likhoge wahi offline available rahega (koi internet nahi chahiye padhne
+ke liye).
+
+1) Emergency contacts
+   - Lawyer/legal aid helpline: ____________________
+   - Trusted family/friend (yaad rakhna, likhna zaroori nahi): ____________________
+   - Local human rights org helpline: ____________________
+
+2) Agar detain/arrest ho jaaye — apne lawyer se confirm karo:
+   - Kitne time ke andar magistrate ke saamne pesh karna zaroori hai (apne desh/state ke current kanoon ke hisaab se) — likho: ____________________
+   - Kisi ko inform karne ka right kaise/kab use karna hai — likho: ____________________
+   - Phone/device se related apne rights (search/seizure) — apne lawyer se confirm karke likho: ____________________
+
+3) Practical notes (khud verify/fill karo)
+   - Nearest legal aid clinic/office: ____________________
+   - Agar safe ho to observe/note karne layak cheezein (badge number, time, location) — apne group ke saath decide karo protocol kya hoga
+   - Meeting point / dispersal plan agar group alag ho jaaye: ____________________
+
+Reminder: ye app khud koi legal advice nahi deta — sirf ek jagah hai jahan
+tumhara APNA verified info offline store ho sake.
+    </string>
+
+    <!-- General, widely-published emergency first-aid steps (tear gas exposure +
+         common protest-injury basics). This is generic life-safety information,
+         NOT personalized medical advice, and NOT a substitute for a doctor or
+         emergency services — it's meant purely as an offline quick reference for
+         a moment when there's no signal to look anything up. -->
+    <string name="first_aid_reference">
+Important: Ye general first-aid info hai, doctor/emergency services ka substitute
+NAHI hai. Jitni jaldi ho sake professional medical help lo, especially agar:
+saans lene mein serious dikkat, chest pain, behoshi/consciousness kam ho jaana,
+bahut zyada bleeding, ya koi chemical burn jo aankh/muh ke paas ho.
+
+1) Tear gas / pepper spray exposure — decontamination
+   - Turant ek khuli/upwind jagah pe jao (hawa ki taraf jahan se gas nahi aa rahi).
+   - Contact lenses ho to nikal do (agar surakshit ho) — inke peeche chemical
+     phas sakta hai.
+   - Aankhein baar-baar palko jhapkate hue thanda saaf paani se kam se kam
+     10-15 minute tak flush karo (aankh ke andar se bahar ki taraf) — agar
+     available ho to saline solution behtar hai plain paani se, lekin paani
+     bhi kaam chala deta hai.
+   - Skin: affected area ko thande paani aur mild soap se dho lo. Rubbing mat
+     karo — isse chemical aur ragadta hai. Contaminated kapde nikaal do agar
+     ho sake (gloves pehen ke, taaki haath contaminate na ho) aur unhe alag
+     bag mein rakho.
+   - Milk ya oil-based cheezein na lagao — recommend nahi kiya jaata, kabhi
+     kabhi jalan aur badha sakti hain.
+   - Agar breathing mein takleef, wheeze, ya chest tightness ho — turant fresh
+     air mein jao aur agar ye kam na ho to emergency medical help lo, khaaskar
+     agar pehle se asthma/lung condition hai.
+   - Baad mein bhi kai ghante tak thodi jalan/khaansi normal ho sakti hai, lekin
+     agar symptoms badhte jaayein ya kam na ho, medical help lo.
+
+2) Common injury basics
+   - Bleeding: clean cloth/gauze se seedha, firm pressure lagao jab tak bleeding
+     kam na ho. Agar khoon bahut zyada/rukta na ho, ya wound bahut deep/bada ho,
+     turant emergency medical help lo — ye first aid usse replace nahi karta.
+   - Cuts/scrapes: agar possible ho to saaf paani se dho lo, saaf cloth/bandage
+     se dhaak do.
+   - Sprain/twist (haath/pair): hilana band karo, agar possible ho to thanda
+     (ice/cold pack, seedha skin pe nahi — kapde mein lapet ke) 15-20 minute
+     lagao, aur us hisse ko upar rakho jaha ho sake.
+   - Behoshi/consciousness kam hona, ya sar pe strong blow lagna: is banda/bandi
+     ko akela mat chhodo, unhe leta do (agar unconscious ho to side pe, taaki
+     ulti se gala block na ho), aur turant emergency medical help lo — ye khud
+     handle karne wali cheez nahi hai.
+   - Breathing na aana ya pulse na milna: agar tumhe CPR training hai to shuru
+     karo aur turant help bulao — is app mein CPR steps nahi diye kyunki hands-on
+     training ke bina galat tarike se try karna khud risk create kar sakta hai;
+     agar training nahi hai, sirf emergency help ke liye jaldi se jaldi bhaago
+     ya kisi trained banda ko dhoondo.
+
+3) General
+   - Group mein jitna ho sake, kam se kam ek aisa banda rakho jisko basic first
+     aid training ho — ye app training ka substitute nahi hai.
+   - Ye reference fixed/offline hai (koi live update nahi) — jaha possible ho,
+     ek proper first-aid course (Red Cross ya local equivalent) karna sabse
+     accha tareeka hai taaki ye jaankari muscle-memory ban jaaye.
+    </string>
+</resources>

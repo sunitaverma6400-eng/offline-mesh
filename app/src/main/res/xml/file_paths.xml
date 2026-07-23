@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Only the cache dir is exposed, and only long enough for the camera app
+         to write a capture into it - EvidenceVaultActivity reads it, encrypts
+         it into the vault, then deletes this plaintext temp copy immediately. -->
+    <cache-path name="vault_capture" path="vault_capture/" />
+    <!-- Briefly holds a decrypted video for an external player to open - deleted
+         on a timer after viewing (see EvidenceVaultActivity.viewItem). -->
+    <cache-path name="vault_playback" path="vault_playback/" />
+</paths>

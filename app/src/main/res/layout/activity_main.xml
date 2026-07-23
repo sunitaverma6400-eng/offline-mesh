@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/textPeerCount"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Connected peers: 0"
+        android:textSize="14sp"
+        android:paddingBottom="2dp" />
+
+    <TextView
+        android:id="@+id/textMeshHealth"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Mesh activity (15 min): 0 devices seen"
+        android:textSize="12sp"
+        android:textColor="#666666"
+        android:paddingBottom="8dp" />
+
+    <!-- Pinned dispersal point - fixed above the chat, never scrolls away with
+         normal messages. Hidden until someone broadcasts one. -->
+    <LinearLayout
+        android:id="@+id/pinnedBannerContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#FFF3CD"
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/textPinnedBanner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#664D03" />
+
+        <Button
+            android:id="@+id/buttonClearPin"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✕"
+            style="?android:attr/buttonStyleSmall" />
+
+    </LinearLayout>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingBottom="8dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/buttonShowQr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Show QR" />
+
+            <Button
+                android:id="@+id/buttonScanQr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Scan QR" />
+
+            <Button
+                android:id="@+id/buttonSendImage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Send Photo" />
+
+            <Button
+                android:id="@+id/buttonRecordVoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎤 Voice" />
+
+            <Button
+                android:id="@+id/buttonSendLocation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📍 Location" />
+
+            <Button
+                android:id="@+id/buttonSos"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🆘 SOS"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#B00020" />
+
+            <Button
+                android:id="@+id/buttonImSafe"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="✅ I'm safe" />
+
+            <Button
+                android:id="@+id/buttonRollCall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📋 Roll Call" />
+
+            <Button
+                android:id="@+id/buttonDetained"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🚔 Detained"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#B00020" />
+
+            <Button
+                android:id="@+id/buttonDetainedLog"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📋 Detained Log" />
+
+            <Button
+                android:id="@+id/buttonSetPin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📌 Dispersal Pt" />
+
+            <Button
+                android:id="@+id/buttonEvidenceVault"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔒 Evidence" />
+
+            <Button
+                android:id="@+id/buttonFirstAid"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🩹 First Aid" />
+
+            <Button
+                android:id="@+id/buttonKnowRights"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📖 Rights" />
+
+            <Button
+                android:id="@+id/buttonAskAi"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🤖 Ask AI" />
+
+            <Button
+                android:id="@+id/buttonSettings"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⚙ Settings" />
+
+            <Button
+                android:id="@+id/buttonPanicWipe"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Wipe All"
+                android:textColor="#B00020" />
+
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerMessages"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="8dp">
+
+        <CheckBox
+            android:id="@+id/checkboxUrgent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Urgent" />
+
+        <EditText
+            android:id="@+id/editMessage"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Type a message..."
+            android:inputType="text" />
+
+        <Button
+            android:id="@+id/buttonSend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Send" />
+
+    </LinearLayout>
+
+</LinearLayout>

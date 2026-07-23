@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.OfflineMesh" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+</resources>
