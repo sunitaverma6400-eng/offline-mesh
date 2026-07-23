@@ -467,7 +467,7 @@ class MainActivity : AppCompatActivity() {
         val rotateIdInfo = TextView(this).apply {
             setPadding(0, 0, 0, 10)
             textSize = 12f
-            textColor = 0xFF666666.toInt()
+            setTextColor(0xFF666666.toInt())
             text = "ON karne par har app-restart pe ek naya random device ID milega (cross-protest tracking/correlation thoda harder) — lekin key-verification ('✓ verified') aur roll-call ka 'known members' list bhi har session reset ho jaayenge. Change apply hone ke liye app restart karo."
         }
         layout.addView(autoWipeInput)
