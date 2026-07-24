@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Mesh topology (direct-ish connections)"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <com.offline.mesh.MeshTopologyView
+            android:id="@+id/meshTopologyView"
+            android:layout_width="match_parent"
+            android:layout_height="260dp"
+            android:background="#F5F5F5" />
+
+        <TextView
+            android:id="@+id/textBatteryRelayStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:paddingTop="6dp"
+            android:paddingBottom="12dp" />
+
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#DDDDDD" android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Payload / compression stats"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/textCompressionStats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:paddingBottom="12dp" />
+
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#DDDDDD" android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Contact graph (mesh intelligence)"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/textTopContacts"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:paddingBottom="12dp" />
+
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#DDDDDD" android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Sub-channels"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingBottom="12dp">
+
+            <Spinner
+                android:id="@+id/spinnerChannel"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/buttonAddChannel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+ Channel" />
+        </LinearLayout>
+
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#DDDDDD" android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Offline map + pinned locations"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <com.offline.mesh.OfflineMapView
+            android:id="@+id/offlineMapView"
+            android:layout_width="match_parent"
+            android:layout_height="280dp"
+            android:background="#EEEEEE" />
+
+        <Button
+            android:id="@+id/buttonAddPin"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="📍 Pin current location" />
+
+        <LinearLayout
+            android:id="@+id/layoutPinsList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="6dp"
+            android:paddingBottom="12dp" />
+
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#DDDDDD" android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="On-device translation"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editTranslateInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Text to translate" />
+
+        <EditText
+            android:id="@+id/editTranslateLang"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Target language (e.g. Hindi)" />
+
+        <Button
+            android:id="@+id/buttonTranslate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Translate" />
+
+        <TextView
+            android:id="@+id/textTranslateOutput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="6dp"
+            android:paddingBottom="12dp" />
+
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#DDDDDD" android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Voice note transcript (silent situations)"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <Button
+            android:id="@+id/buttonTranscribe"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🎙 Transcribe live voice" />
+
+        <TextView
+            android:id="@+id/textVoiceTranscript"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="6dp"
+            android:paddingBottom="24dp" />
+
+    </LinearLayout>
+</ScrollView>

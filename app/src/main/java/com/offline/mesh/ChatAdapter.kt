@@ -29,7 +29,19 @@ data class DisplayMessage(
     val type: MessageType = MessageType.TEXT,
     val payloadBase64: String? = null, // image or audio bytes, base64
     val priority: Priority = Priority.NORMAL,
-    val trust: TrustBadge = TrustBadge.UNSIGNED
+    val trust: TrustBadge = TrustBadge.UNSIGNED,
+    // Best-effort reverse-geocoded address for LOCATION messages. [text] stays
+    // the raw "lat,lon" (needed by openLocation()'s geo: intent parsing) - this
+    // is purely a display label filled in asynchronously after the pin is sent.
+    val locationLabel: String? = null,
+    // The underlying MeshMessage's id (own sent messages only, so we can match a
+    // later DELIVERY_ACK back to this bubble). Empty for received messages - they
+    // don't need to track their own delivery.
+    val id: String = "",
+    // True once at least one other device has ACKed this message. Best-effort only
+    // (mesh is flood-based, no guaranteed path back) - in-memory for this session,
+    // not persisted, so it resets to "sent" (no mark) after an app restart.
+    val delivered: Boolean = false
 )
 
 class ChatAdapter(private val items: MutableList<DisplayMessage>) :
@@ -55,7 +67,8 @@ class ChatAdapter(private val items: MutableList<DisplayMessage>) :
         val item = items[position]
         holder.sender.text = if (item.isMine) "You" else item.senderName
         val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-        holder.time.text = fmt.format(Date(item.ts))
+        val deliveredMark = if (item.isMine && item.delivered) " ✓" else ""
+        holder.time.text = fmt.format(Date(item.ts)) + deliveredMark
 
         holder.urgentBadge.visibility = if (item.priority == Priority.URGENT) View.VISIBLE else View.GONE
 
@@ -94,7 +107,14 @@ class ChatAdapter(private val items: MutableList<DisplayMessage>) :
             }
             MessageType.LOCATION -> {
                 holder.body.visibility = View.VISIBLE
-                holder.body.text = "📍 ${item.text}"
+                // item.text always stays raw "lat,lon" for openLocation() below;
+                // locationLabel (if the reverse-geocode succeeded) is shown as
+                // the human-readable line, with coordinates kept underneath.
+                holder.body.text = if (item.locationLabel != null) {
+                    "📍 ${item.locationLabel}\n(${item.text})"
+                } else {
+                    "📍 ${item.text}"
+                }
                 holder.openLocationButton.visibility = View.VISIBLE
                 holder.openLocationButton.setOnClickListener {
                     openLocation(holder.itemView.context, item.text)
@@ -140,6 +160,25 @@ class ChatAdapter(private val items: MutableList<DisplayMessage>) :
     fun addMessage(msg: DisplayMessage) {
         items.add(msg)
         notifyItemInserted(items.size - 1)
+    }
+
+    /** Fills in [DisplayMessage.locationLabel] once a reverse-geocode result comes back
+     *  asynchronously after the message was already added and its pin already sent. */
+    fun setLocationLabel(target: DisplayMessage, label: String) {
+        val idx = items.indexOf(target)
+        if (idx == -1) return
+        items[idx] = items[idx].copy(locationLabel = label)
+        notifyItemChanged(idx)
+    }
+
+    /** Marks the own-sent message with this [messageId] as delivered (a DELIVERY_ACK
+     *  came back for it) and refreshes just that row. No-op if it's not in this list
+     *  (e.g. already scrolled out of a very long session, or a stale/duplicate ACK). */
+    fun markDelivered(messageId: String) {
+        val idx = items.indexOfFirst { it.id == messageId }
+        if (idx == -1 || items[idx].delivered) return
+        items[idx] = items[idx].copy(delivered = true)
+        notifyItemChanged(idx)
     }
 
     fun clear() {

@@ -111,5 +111,30 @@ object PersistentStore {
         listOf("mesh_outbox.json", "mesh_seen_ids.json", "mesh_displayed.json").forEach { base ->
             File(dir, name(base)).delete()
         }
+        // Contact graph and pinned locations are local device-usage metadata (not chat
+        // content), but a panic wipe should still clear them so they don't outlive the
+        // rest of the profile's data.
+        File(dir, name("mesh_contact_graph.json")).delete()
+        File(dir, name("mesh_pinned_locations.json")).delete()
+    }
+
+    /** Mesh intelligence: per-device encounter counts (see ContactGraph). */
+    fun loadContactGraph(): JSONObject {
+        val text = readFile(name("mesh_contact_graph.json")) ?: return JSONObject()
+        return try { JSONObject(text) } catch (e: Exception) { JSONObject() }
+    }
+
+    fun saveContactGraph(obj: JSONObject) {
+        writeFile(name("mesh_contact_graph.json"), obj.toString())
+    }
+
+    /** Named pinned locations shown on the offline map (see PinnedLocation). */
+    fun loadPinnedLocationsJson(): JSONArray {
+        val text = readFile(name("mesh_pinned_locations.json")) ?: return JSONArray()
+        return try { JSONArray(text) } catch (e: Exception) { JSONArray() }
+    }
+
+    fun savePinnedLocationsJson(arr: JSONArray) {
+        writeFile(name("mesh_pinned_locations.json"), arr.toString())
     }
 }

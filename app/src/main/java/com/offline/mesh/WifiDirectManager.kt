@@ -9,6 +9,8 @@ import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -42,12 +44,19 @@ class WifiDirectManager(
     companion object {
         private const val TAG = "WifiDirectManager"
         private const val PORT = 8988
+        // Android's own P2P discovery window is ~120s and does NOT auto-repeat -
+        // without re-triggering it periodically, this phone stops finding any
+        // NEW peers after the first couple of minutes even though it looks like
+        // it's still "running". Comfortably inside that window so we never let
+        // it lapse.
+        private const val REDISCOVER_INTERVAL_MS = 90_000L
     }
 
     private val manager: WifiP2pManager? =
         context.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
     private var channel: WifiP2pManager.Channel? = null
     private var receiverRegistered = false
+    private var started = false
 
     private var serverSocket: ServerSocket? = null
     private val clientWriters = CopyOnWriteArrayList<OutputStream>()
@@ -55,14 +64,34 @@ class WifiDirectManager(
     private var clientWriterToOwner: OutputStream? = null
 
     private val executor = Executors.newCachedThreadPool()
+    private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var isGroupOwner = false
+    // True once we've either become group owner or connected to one - used to
+    // avoid firing off a fresh connect() at every single peer-list refresh
+    // (which happens often during discovery) once we're already in a group.
+    @Volatile private var inGroup = false
+    @Volatile private var connectAttemptInFlight = false
+
+    private val rediscoverRunnable = object : Runnable {
+        override fun run() {
+            if (!started) return
+            // Only keep hunting for peers if we're not already in a group -
+            // once connected there's no need to keep scanning, and doing so
+            // can actually disrupt an active Wi-Fi Direct connection on some
+            // chipsets.
+            if (!inGroup) discoverPeers()
+            mainHandler.postDelayed(this, REDISCOVER_INTERVAL_MS)
+        }
+    }
 
     @SuppressLint("MissingPermission")
     fun start() {
         val mgr = manager ?: return
         channel = mgr.initialize(context, context.mainLooper, null)
         registerReceiver()
+        started = true
         discoverPeers()
+        mainHandler.postDelayed(rediscoverRunnable, REDISCOVER_INTERVAL_MS)
     }
 
     private val intentFilter = IntentFilter().apply {
@@ -76,21 +105,38 @@ class WifiDirectManager(
         override fun onReceive(ctx: Context, intent: Intent) {
             when (intent.action) {
                 WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
+                    if (inGroup || connectAttemptInFlight) return
                     manager?.requestPeers(channel) { peers ->
-                        val device = peers.deviceList.firstOrNull()
-                        if (device != null && device.status == WifiP2pDevice.AVAILABLE) {
-                            connectTo(device)
-                        }
+                        // Try every AVAILABLE peer in order, not just the first -
+                        // the old code only ever looked at deviceList.firstOrNull(),
+                        // so if that specific device was mid-negotiation elsewhere
+                        // or simply refused, we'd never even attempt anyone else.
+                        val candidate = peers.deviceList.firstOrNull { it.status == WifiP2pDevice.AVAILABLE }
+                        if (candidate != null) connectTo(candidate)
                     }
                 }
                 WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                     manager?.requestConnectionInfo(channel) { info ->
+                        connectAttemptInFlight = false
                         if (info.groupFormed && info.isGroupOwner) {
                             isGroupOwner = true
+                            inGroup = true
                             startServerSocket()
                         } else if (info.groupFormed) {
                             isGroupOwner = false
+                            inGroup = true
                             connectToOwner(info.groupOwnerAddress.hostAddress ?: return@requestConnectionInfo)
+                        } else {
+                            // Group dissolved (peer walked away, connection dropped,
+                            // etc). The old code just silently did nothing here,
+                            // which meant Wi-Fi Direct never recovered for the rest
+                            // of the session. Reset everything and go back to
+                            // hunting for a new peer.
+                            val wasInGroup = inGroup
+                            inGroup = false
+                            isGroupOwner = false
+                            teardownConnections()
+                            if (wasInGroup) discoverPeers()
                         }
                     }
                 }
@@ -98,9 +144,29 @@ class WifiDirectManager(
         }
     }
 
+    private fun teardownConnections() {
+        try { serverSocket?.close() } catch (e: Exception) { }
+        serverSocket = null
+        clientWriters.clear()
+        try { clientSocketToOwner?.close() } catch (e: Exception) { }
+        clientSocketToOwner = null
+        clientWriterToOwner = null
+        onPeerCountChanged(0)
+    }
+
     private fun registerReceiver() {
         if (!receiverRegistered) {
-            context.registerReceiver(broadcastReceiver, intentFilter)
+            // Android 14 (API 34) made specifying RECEIVER_EXPORTED/RECEIVER_NOT_EXPORTED
+            // mandatory for every dynamically-registered receiver, even ones that
+            // only listen for system broadcasts (which were exempt pre-14). This
+            // app's own broadcasts never leave the app, so NOT_EXPORTED is correct -
+            // without this, registerReceiver() throws SecurityException and CRASHES
+            // the whole app on any Android 14 phone the moment the mesh service starts.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(broadcastReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(broadcastReceiver, intentFilter)
+            }
             receiverRegistered = true
         }
     }
@@ -115,10 +181,14 @@ class WifiDirectManager(
 
     @SuppressLint("MissingPermission")
     private fun connectTo(device: WifiP2pDevice) {
+        connectAttemptInFlight = true
         val config = WifiP2pConfig().apply { deviceAddress = device.deviceAddress }
         manager?.connect(channel, config, object : WifiP2pManager.ActionListener {
             override fun onSuccess() { Log.d(TAG, "Connect requested to ${device.deviceName}") }
-            override fun onFailure(reason: Int) { Log.w(TAG, "Connect failed: $reason") }
+            override fun onFailure(reason: Int) {
+                Log.w(TAG, "Connect failed: $reason")
+                connectAttemptInFlight = false
+            }
         })
     }
 
@@ -200,6 +270,12 @@ class WifiDirectManager(
                 clientSocketToOwner = null
                 clientWriterToOwner = null
                 onPeerCountChanged(0)
+                // The owner connection dropped from under us - don't just sit
+                // here silently for the rest of the session; go back to hunting.
+                val wasInGroup = inGroup
+                inGroup = false
+                isGroupOwner = false
+                if (wasInGroup) discoverPeers()
             }
         }
     }
@@ -223,6 +299,8 @@ class WifiDirectManager(
     }
 
     fun stop() {
+        started = false
+        mainHandler.removeCallbacks(rediscoverRunnable)
         try {
             serverSocket?.close()
             clientSocketToOwner?.close()

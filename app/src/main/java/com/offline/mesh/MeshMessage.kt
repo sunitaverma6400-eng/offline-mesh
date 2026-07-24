@@ -13,7 +13,12 @@ enum class MessageType {
     // payload is human-readable "name — last seen at location/time" detention detail.
     DETAINED_ALERT,
     // payload is the current pinned dispersal-point text; latest one replaces the last.
-    PINNED_DISPERSAL
+    PINNED_DISPERSAL,
+    // Sent automatically by a device when it receives+decrypts a "real" content message
+    // (TEXT/IMAGE/AUDIO/LOCATION/DETAINED_ALERT) from someone else. Payload (pre-encryption)
+    // is the id of the message being acknowledged. Never shown as a chat bubble itself -
+    // BleMeshService intercepts it and turns it into a "✓ delivered" mark on the original.
+    DELIVERY_ACK
 }
 
 /** URGENT messages jump the queue: sent/relayed before NORMAL ones when a peer connects. */
@@ -32,6 +37,17 @@ enum class Priority { NORMAL, URGENT }
  * payload     - Base64 AES-GCM ciphertext of: chat text / image bytes / audio bytes / "lat,lon"
  * senderPubKey- Base64 device public key (empty on messages from older/unsigned builds)
  * signature   - Base64 ECDSA signature over the rest of the fields, see KeyManager.signableBytes
+ * appVersion  - sender's AppVersion.CODE at send time. Missing/0 on messages from builds
+ *               before this field existed - treated as "unknown, assume older".
+ * channel     - sub-channel within the group passphrase (e.g. "general", "medic", "legal").
+ *               Purely a client-side filter/label - does NOT change encryption/routing,
+ *               so older builds without this field just show everything in one feed
+ *               (they default to "general" via optString below, see fromJson).
+ * anonymous   - if true, UI should show senderName as "Someone in group" instead of the
+ *               real senderName. senderName itself is still transmitted as-is (needed for
+ *               older clients / signature verification) - hiding it is a DISPLAY decision
+ *               made per-client, not real sender-anonymity at the protocol level. See
+ *               ChannelsAndAnonymity.kt for the honest limitations write-up.
  */
 data class MeshMessage(
     val id: String = UUID.randomUUID().toString(),
@@ -44,7 +60,10 @@ data class MeshMessage(
     val epoch: Long = 0L,
     val payload: String,
     val senderPubKey: String = "",
-    val signature: String = ""
+    val signature: String = "",
+    val appVersion: Int = AppVersion.CODE,
+    val channel: String = ChannelsAndAnonymity.DEFAULT_CHANNEL,
+    val anonymous: Boolean = false
 ) {
     fun toJson(): String {
         val obj = JSONObject()
@@ -59,8 +78,15 @@ data class MeshMessage(
         obj.put("payload", payload)
         obj.put("senderPubKey", senderPubKey)
         obj.put("signature", signature)
+        obj.put("appVersion", appVersion)
+        obj.put("channel", channel)
+        obj.put("anonymous", anonymous)
         return obj.toString()
     }
+
+    /** What to show as the sender label in the UI, honoring anonymous mode. */
+    fun displayName(): String =
+        if (anonymous) "Someone in group" else senderName
 
     /** True if this message is older than [maxAgeMillis] and should be dropped from the outbox. */
     fun isExpired(maxAgeMillis: Long): Boolean {
@@ -103,7 +129,10 @@ data class MeshMessage(
                     epoch = obj.optLong("epoch", 0L),
                     payload = obj.getString("payload"),
                     senderPubKey = obj.optString("senderPubKey", ""),
-                    signature = obj.optString("signature", "")
+                    signature = obj.optString("signature", ""),
+                    appVersion = obj.optInt("appVersion", 0),
+                    channel = obj.optString("channel", ChannelsAndAnonymity.DEFAULT_CHANNEL),
+                    anonymous = obj.optBoolean("anonymous", false)
                 )
             } catch (e: Exception) {
                 null

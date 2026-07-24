@@ -15,10 +15,26 @@ android {
         versionName "1.0"
     }
 
+    // Reads from environment variables so the actual keystore/passwords are
+    // NEVER committed to this (public) repo - see .github/workflows/release-apk.yml,
+    // which populates these from a GitHub Actions secret at build time.
+    // Only affects `release` builds; `debug` builds (used for every-push CI
+    // checks and local Termux testing) are unaffected and use Android's
+    // normal auto-generated debug key.
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "release-does-not-exist.jks")
+            storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+            keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: "offlinemesh"
+            keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 

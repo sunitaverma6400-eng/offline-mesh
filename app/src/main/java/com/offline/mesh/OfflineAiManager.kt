@@ -8,6 +8,38 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession.LlmInferenceSessionOptions
 import java.io.File
 
+/**
+ * Wraps a small, fully offline language model for general Q&A inside the mesh app.
+ *
+ * PLEASE READ before wiring this into more UI — this is the honest description,
+ * matching the tone of the rest of this README/codebase:
+ *
+ *  - This is a *static* model baked at training time. It has NO internet, NO
+ *    search, NO connection to real-time information, and no way to check its
+ *    own answers against reality. Whatever it "knows" is frozen and can be
+ *    outdated or simply wrong.
+ *  - It WILL sometimes generate confident, fluent, wrong answers
+ *    (hallucination) — this is a known property of all small LLMs, not a bug
+ *    to be fixed here. For anything safety-critical in a protest/shutdown
+ *    context (legal rights, medical questions, "is X area safe") treat its
+ *    output as a rough first draft, not a verified fact — cross-check with
+ *    real people where you possibly can.
+ *  - The model weights file (few hundred MB to a few GB depending on which
+ *    model you pick) is deliberately NOT bundled in this project/zip — it's
+ *    too large, and you should fetch it yourself over a connection you trust
+ *    *before* you expect to need it offline. See README "Offline AI setup".
+ *  - Only phones that actually loaded a model file can answer "Ask AI"
+ *    queries. Everyone else in the mesh can still receive answers if
+ *    someone chooses to share one into the group chat (see MainActivity),
+ *    always clearly tagged as AI-generated and unverified.
+ *
+ * NOTE on the tasks-genai 0.10.x API split: the engine itself
+ * (LlmInference/LlmInferenceOptions) only knows about the model file, max
+ * tokens, and backend. Sampling knobs like top-K/temperature moved to a
+ * separate *session* object (LlmInferenceSession/LlmInferenceSessionOptions)
+ * that sits on top of the engine - that's why loading now happens in two
+ * steps below instead of one.
+ */
 class OfflineAiManager(private val context: Context) {
 
     companion object {
@@ -20,6 +52,8 @@ class OfflineAiManager(private val context: Context) {
         @Volatile
         private var session: LlmInferenceSession? = null
 
+        /** Where the model file lives once imported — app-private external storage,
+         *  no extra runtime permission needed on API 26+. */
         fun modelFile(context: Context): File =
             File(context.getExternalFilesDir(null), MODEL_FILENAME)
 
@@ -30,6 +64,8 @@ class OfflineAiManager(private val context: Context) {
         fun onResult(answer: String?, error: String?)
     }
 
+    /** Loads the model + session into memory if not already loaded. This is CPU/RAM
+     *  heavy — only ever call from a background thread (ask() below already does this). */
     @Synchronized
     private fun ensureLoaded(): Boolean {
         if (engine != null && session != null) return true
@@ -57,6 +93,11 @@ class OfflineAiManager(private val context: Context) {
         }
     }
 
+    /**
+     * Runs [question] through the local model on a background thread. [callback]
+     * fires on that same background thread — hop back to the main thread yourself
+     * before touching any views.
+     */
     fun ask(question: String, callback: AnswerCallback) {
         Thread {
             try {
@@ -94,6 +135,8 @@ class OfflineAiManager(private val context: Context) {
             "you cannot possibly have, say so clearly instead of guessing.\n\n" +
             "Question: $question\nAnswer:"
 
+    /** Frees the loaded model's memory — call when done, e.g. onDestroy of the last
+     *  activity that might use it, or after a panic wipe. */
     fun release() {
         session?.close()
         session = null

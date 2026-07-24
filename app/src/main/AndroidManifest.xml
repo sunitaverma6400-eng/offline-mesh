@@ -65,6 +65,12 @@
             android:name=".EvidenceVaultActivity"
             android:exported="false" />
 
+        <!-- Mesh intelligence, offline map, channels/anonymous, translation, voice
+             transcript, topology + battery-relay tools. -->
+        <activity
+            android:name=".MeshToolsActivity"
+            android:exported="false" />
+
         <service
             android:name=".BleMeshService"
             android:foregroundServiceType="connectedDevice"

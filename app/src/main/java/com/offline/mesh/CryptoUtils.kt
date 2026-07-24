@@ -1,8 +1,11 @@
 package com.offline.mesh
 
 import android.util.Base64
+import java.io.ByteArrayOutputStream
 import java.security.SecureRandom
 import java.security.spec.KeySpec
+import java.util.zip.Deflater
+import java.util.zip.Inflater
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -76,17 +79,58 @@ object CryptoUtils {
         }
     }
 
-    /** Convenience: encrypt directly against the CURRENT epoch key for [passphrase]. */
+    /** Convenience: encrypt directly against the CURRENT epoch key for [passphrase].
+     *  Text is Deflate-compressed BEFORE encryption (compressing ciphertext afterward
+     *  does nothing - it's already high-entropy). Chat text / JSON-ish payloads
+     *  typically shrink 30-60%, which matters a lot over BLE's ~500-byte writes. */
     fun encryptForNow(plainText: String, passphrase: String): Pair<String, Long> {
         val epoch = RatchetManager.currentEpoch()
         val stretched = stretchPassphrase(passphrase)
         val epochKey = RatchetManager.mixEpoch(stretched, epoch)
-        return Pair(encryptWithKey(plainText, epochKey), epoch)
+        val compressedB64 = Base64.encodeToString(compress(plainText), Base64.NO_WRAP)
+        return Pair(encryptWithKey(compressedB64, epochKey), epoch)
     }
 
-    /** Convenience: decrypt a message tagged with [msgEpoch], tolerating small clock drift. */
+    /** Convenience: decrypt a message tagged with [msgEpoch], tolerating small clock drift,
+     *  then reverses the Deflate compression applied by [encryptForNow]. Returns null on
+     *  any failure (wrong key, corrupt data, or a message from a build old enough that it
+     *  was never compressed in the first place - see README's version-mismatch warning). */
     fun decryptForEpoch(payload: String, passphrase: String, msgEpoch: Long): String? {
         val stretched = stretchPassphrase(passphrase)
-        return RatchetManager.decryptWithTolerance(payload, stretched, msgEpoch)
+        val decrypted = RatchetManager.decryptWithTolerance(payload, stretched, msgEpoch) ?: return null
+        return try {
+            decompress(Base64.decode(decrypted, Base64.NO_WRAP))
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun compress(text: String): ByteArray {
+        val input = text.toByteArray(Charsets.UTF_8)
+        val deflater = Deflater(Deflater.BEST_COMPRESSION)
+        deflater.setInput(input)
+        deflater.finish()
+        val buffer = ByteArray(2048)
+        val out = ByteArrayOutputStream(input.size)
+        while (!deflater.finished()) {
+            val n = deflater.deflate(buffer)
+            out.write(buffer, 0, n)
+        }
+        deflater.end()
+        return out.toByteArray()
+    }
+
+    private fun decompress(bytes: ByteArray): String {
+        val inflater = Inflater()
+        inflater.setInput(bytes)
+        val buffer = ByteArray(2048)
+        val out = ByteArrayOutputStream(bytes.size * 2)
+        while (!inflater.finished()) {
+            val n = inflater.inflate(buffer)
+            if (n == 0 && inflater.needsInput()) break
+            out.write(buffer, 0, n)
+        }
+        inflater.end()
+        return out.toString("UTF-8")
     }
 }

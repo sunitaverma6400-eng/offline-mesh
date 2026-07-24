@@ -7,6 +7,8 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 enum class EvidenceType { PHOTO, VIDEO }
 
@@ -167,5 +169,38 @@ object EvidenceVaultManager {
      *  mesh chat's own data entirely, are untouched. */
     fun wipeNamespace(context: Context, namespace: String) {
         dir(context, namespace).deleteRecursively()
+    }
+
+    /** Zips up the (already-encrypted-at-rest) manifest + item files for [namespace]
+     *  into the app's own external-files directory - no runtime storage permission
+     *  needed on any supported API level, and reachable later via a file manager or
+     *  by connecting the phone to a PC (Android/data/com.offline.mesh/files/vault_exports).
+     *  Files go into the zip AS-IS - they're already PBKDF2/AES-GCM ciphertext, so this
+     *  is a backup of encrypted blobs, not a plaintext leak. The [pin] is still needed
+     *  just to read the manifest (proves the caller is actually unlocked into this
+     *  namespace) - it is NOT stored anywhere in the export itself.
+     *  Returns the zip file, or null if this namespace has nothing to export. */
+    fun exportEncryptedBackup(context: Context, pin: String, namespace: String): File? {
+        val items = loadManifest(context, pin, namespace)
+        if (items.isEmpty()) return null
+        val exportDir = File(context.getExternalFilesDir(null), "vault_exports")
+        if (!exportDir.exists()) exportDir.mkdirs()
+        val outFile = File(exportDir, "vault_${namespace}_${System.currentTimeMillis()}.zip")
+        ZipOutputStream(outFile.outputStream()).use { zip ->
+            val manifest = manifestFile(context, namespace)
+            if (manifest.exists()) {
+                zip.putNextEntry(ZipEntry("manifest.enc"))
+                manifest.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+            for (item in items) {
+                val f = File(dir(context, namespace), item.fileName)
+                if (!f.exists()) continue
+                zip.putNextEntry(ZipEntry(item.fileName))
+                f.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+        }
+        return outFile
     }
 }

@@ -340,6 +340,243 @@ jaata — chat ke bilkul upar ek fixed yellow banner mein hamesha dikhta rehta
 hai, jab tak koi clear (✕) ya naya pin bhej ke replace na kare. Group split ho
 jaaye to bhi sabko ek hi jagah pe ye pin turant dikhega bina scroll-back kiye.
 
+**16. Version-mismatch warning**
+Har message ke saath sender ka app version (`AppVersion.CODE`) jaata hai. Agar
+group mein koi purane/naye build pe hai, chat ke upar ek chhota ⚠️ warning
+dikhta hai — kitne log purane version pe hain (unhe update karwana hai) aur
+kitne naye pe (tumhe update karna hai). Sirf ek info hai, kisi ko block nahi
+karta — lekin agar mismatch hai to naye safety features (roll call, detained
+alert, pinned dispersal) sabke liye kaam nahi karenge, isliye protest se pehle
+sabko same version pe le aana zaroori hai.
+
+## App update kaise banao aur distribute karo (no hosting needed)
+
+Ye ek fully offline peer-to-peer app hai — koi server/backend/hosting nahi
+chahiye. GitHub Actions sirf **APK build karne** ke liye use hota hai, wo bhi
+optional hai:
+
+- Har push pe (`.github/workflows/build-apk.yml`) → ek debug APK ban ke
+  GitHub Actions ke "Artifacts" mein milta hai, testing ke liye.
+- Ek version tag push karne pe (`git tag v6 && git push origin v6`) →
+  `.github/workflows/release-apk.yml` ek GitHub **Release** bana deta hai jisme
+  APK ka direct download link aur ek scannable **QR code** dono hote hain —
+  isse sabko bhejo/QR scan karwao. Tag push karne se pehle
+  `AppVersion.kt` mein `CODE`/`NAME` bump karna mat bhoolna, taaki upar wala
+  version-mismatch warning sahi rahe.
+- Koi auto-update system NAHI hai — naya APK har phone pe manually install
+  karwana padta hai (Play Store pe jaan-boojh kar nahi hai, ye protest-safety
+  tool hai).
+
+## Stable release signing key (zaroori for 1000+ log distribution)
+
+Debug build (`assembleDebug`, `build-apk.yml`) fine hai testing ke liye, lekin
+wide distribution ke liye **release build** use karo (`release-apk.yml`, tag
+push pe trigger hota hai) — kyunki debug key har CI run pe alag ho sakti hai,
+jisse ek naye version ka install PURANE ke upar "update" nahi ho paata
+(Android signature-mismatch pe update block kar deta hai — sabko manually
+uninstall+reinstall karna padta, chat/vault data samet).
+
+Setup (ek baar):
+1. GitHub repo mein jaake **Settings > Secrets and variables > Actions** kholo
+2. Ye 4 secrets add karo (values tumhe ek alag secure file mein diye gaye hain,
+   isi conversation mein — GitHub pe kabhi mat daalna keystore ko directly,
+   sirf Secrets mein):
+   - `RELEASE_KEYSTORE_BASE64`
+   - `RELEASE_KEYSTORE_PASSWORD`
+   - `RELEASE_KEY_ALIAS`
+   - `RELEASE_KEY_PASSWORD`
+3. Ab jab bhi `git tag vN && git push origin vN` karoge, ek **signed release
+   APK** banega jo purane installs ke upar cleanly update hota hai.
+4. `.jks` keystore file aur passwords ko kahin bahut safe rakho (password
+   manager / encrypted note) — isse **kabhi bhi repo mein commit mat karna**.
+   Agar ye kho gaya, next release se sabko phir se manual reinstall karna
+   padega.
+
+Certificate fingerprint (SHA-256) publicly share karna theek hai — log isse
+apna downloaded APK verify kar sakte hain ki genuine hai:
+```
+72:3C:E4:41:68:07:EA:C7:94:6B:BF:55:60:6D:CE:67:47:26:0F:9D:7A:4F:41:41:F2:A2:CC:9C:8A:9A:DD:2D
+```
+
+## 1000+ logon tak APK pahunchana (distribution at scale)
+
+Is scale pe ek-ek phone pe manually transfer karna practical nahi hai — isliye
+**layered/decentralized approach** use karo, mesh app ki hi philosophy jaisa:
+
+1. **Trusted "cluster lead" model** — har 20-50 logon ka ek trusted organizer
+   ho jo unhe Nearby Share/Bluetooth se seedha APK de. Isse koi single
+   centralized "distribution list" nahi banti jo target ban sake.
+2. **App khud propagate ho sakta hai** — ek baar kuch sau phones pe install ho
+   jaaye, APK file ko khud Nearby Share se aage bhejte raho ("mujhe mila,
+   3 aur logon ko de do") — bilkul mesh chat ki tarah hi organic spread.
+3. **Multiple independent channels** — sirf ek jagah (jaise ek hi Telegram
+   channel) pe depend mat karo; GitHub Release link, Signal, local meetups —
+   sab parallel use karo taaki ek channel band/monitor ho to baaki chalte
+   rahein.
+4. **Fingerprint verify karwao** — jahan bhi APK link share karo, saath mein
+   upar wala SHA-256 fingerprint bhi do, aur logon ko bolo install se pehile
+   verify karein (Settings > Apps > OfflineMesh > App info mein signature
+   dikhti hai, ya kisi APK-verifier app se) — isse koi tampered/fake APK
+   pakad mein aa jayega.
+5. **Public link tab hi use karo jab zaroorat pade** — jahan possible ho,
+   local/offline transfer ko priority do; public GitHub link ek digital trail
+   chhodta hai (kisne visit kiya, kab).
+
+## Deep bug-fix round (connection reliability)
+
+Kaafi gehraai se audit karne ke baad ye real bugs mile aur fix hue:
+
+1. **One-way BLE messaging** — GATT connections mein "client" aur "server" role
+   hota hai; pehle sirf client→server direction kaam karti thi. Ab dono taraf
+   kaam karta hai (GATT notify/subscribe mechanism add kiya).
+2. **BLE writes silently drop hote the** — agar ek saath multiple messages
+   bhejte (jaise naya peer connect hote hi purana outbox flush), Android
+   beech ke writes chupke se drop kar deta tha. Ab ek serialized queue hai jo
+   ek-ek karke confirm hone ke baad hi agla bhejti hai.
+3. **Settings dialog scroll nahi hota tha** — ScrollView wrap missing thi.
+4. **Image quality bahut kharab thi** — purana BLE-only zamana ka 480px/50%
+   quality tha; ab Wi-Fi Direct ke through 1280px/82% quality jaati hai.
+5. **Permissions bug (bahut critical)** — agar Camera ya Mic permission deny
+   ki (QR scan / voice note ke liye), poora mesh service hi start nahi hota
+   tha, chahe Bluetooth/Location sab sahi ho. Ab sirf Bluetooth/Location/WiFi
+   permissions hi mesh start karne ke liye zaroori hain — Camera/Mic optional
+   hain, unke bina bas wahi specific feature (QR/voice) disable rehta hai.
+6. **Wi-Fi Direct discovery ~2 min baad ruk jaati thi** — Android ka apna P2P
+   discovery window khatam ho jaata hai aur khud restart nahi hota; ab har
+   90 second mein automatically re-trigger hoti hai.
+7. **Wi-Fi Direct sirf pehla mila hua peer try karta tha** — agar wo busy/deny
+   kare, doosre peers try hi nahi hote the.
+8. **Wi-Fi Direct connection drop hone ke baad kabhi recover nahi hoti thi** —
+   ek baar group toot jaaye to session ke baaki hisse mein Wi-Fi Direct
+   permanently dead rehta tha. Ab automatically reset hoke dobara discovery
+   shuru karta hai.
+9. **Android 14 crash risk** — do jagah (`WifiDirectManager`, battery
+   receiver) mein naya mandatory `RECEIVER_EXPORTED`/`RECEIVER_NOT_EXPORTED`
+   flag missing tha, jo Android 14 phones pe app ko turant crash kar sakta
+   tha jaise hi mesh service start hoti.
+
+## Advanced round 3 — is update mein
+
+**1. Message compression**
+Har message ab encrypt hone se PEHLE Deflate-compress hoti hai (`CryptoUtils.kt`).
+Text/JSON-jaisa content typically 30-60% chhota ho jaata hai — BLE ke ~500-byte
+writes ke liye ye directly matlab rakhta hai (kam packets, kam radio time, kam
+battery). **Honest limitation**: photos/voice notes already-compressed formats
+(JPEG/AAC) hain, unpe ye zyada fayda nahi karta — real gain text-heavy chat mein
+hai. **Zaroori**: ye ek breaking wire-format change hai — jaise pichle rounds
+mein bhi hua, poore group ko is version pe saath update karna hoga (version-
+mismatch warning already ise flag karega).
+
+**2. Delivery receipts (✓ delivered)**
+Jab bhi koi doosra phone tumhara TEXT/IMAGE/AUDIO/LOCATION/DETAINED_ALERT
+message decrypt karke dikhata hai, wo automatically ek chhota "DELIVERY_ACK"
+wapas bhejta hai. Jab wo tumhare phone tak pahunch jaaye, tumhare bheje message
+ke time ke aage ek "✓" dikhega. **Honest limitation**: ye best-effort hai — mesh
+flood-based hai, guaranteed return-path nahi. Sirf "kam se kam ek doosre device
+tak pahuncha" batata hai, sabtak nahi. Session-only hai (app restart pe checkmark
+state reset ho jaata hai, undelivered nahi maano).
+
+**3. Mesh-density congestion throttling**
+Adaptive TTL ke saath-saath, ab agar mesh bahut dense lage (15 min mein 8+
+alag senders), BLE scan/advertise bhi automatically low-power mode mein chala
+jaata hai — sirf battery ki wajah se nahi, radio congestion kam karne ke liye
+bhi. Har 5 minute mein re-check hota hai.
+
+**4. Dead-man's switch (opt-in, Settings)**
+Settings mein ek checkbox + "N hours" input. ON karne par: agar itne ghante
+tak tumne app unlock nahi kiya ya "I'm safe" nahi dabaya, group ko automatically
+ek URGENT alert chala jaata hai. Har check-in (unlock/I'm safe) par timer reset
+ho jaata hai. **Honest limitation**: ye sirf tab kaam karta hai jab mesh service
+chal rahi ho (phone on, Bluetooth on) — phone band/dead ho jaaye to koi alert
+nahi ja sakta, ye koi hardware-level SOS nahi hai.
+
+**5. Evidence Vault: encrypted backup export**
+Evidence Vault ke "⚙" (Vault Settings) dialog mein ab ek "Export encrypted
+backup" button hai — vault ke already-encrypted files ko ek `.zip` mein app ke
+apne external-files folder mein daal deta hai
+(`Android/data/com.offline.mesh/files/vault_exports`), koi storage permission
+nahi chahiye. Files zip ke andar bhi encrypted hi rehti hain (PIN-protected) —
+isse USB/SD card se ek doosri jagah backup rakh sakte ho agar phone confiscate
+hone ka darr ho.
+
+## Naye features (Mesh Tools screen)
+
+Chat screen mein ab ek **"🧰 Mesh Tools"** button hai jo ek naya screen kholta hai
+(`MeshToolsActivity`) jahan ye sab hai:
+
+**1. Mesh intelligence — contact graph**
+`ContactGraph.kt` har decrypt hue message se senderId track karta hai (kitni baar
+mila, last kab mila) — disk pe persist hota hai. Ye poori mesh ka route table
+NAHI hai (koi ek phone ko poori mesh ka shape pata nahi chal sakta, sirf apne
+khud ke encounters ka pata hai) — isko sirf do jagah use kiya hai: (a) jab
+ek saath kai peers connected hon, unko outbox sync karne ka order decide karne
+mein (bahut-frequent + bahut-rare peers ko priority, beech waale kam), aur
+(b) Mesh Tools screen pe "kaun kis se mila" list dikhane ke liye.
+
+**2. Compression/payload stats**
+`CompressionStats.kt` — sent/received messages ka average on-wire size aur
+plaintext-vs-encoded overhead ratio track karta hai, Mesh Tools screen pe
+dikhta hai. Honest note: abhi koi real compression (gzip waghera) nahi hai,
+isliye "ratio" asal mein AES-GCM+Base64 ka overhead dikhata hai (~1.3-1.4x), na
+ki kuch bacha hua space — agar future mein real compression add ho, usi class
+mein `recordCompressed()` already plumbed hai.
+
+**3. Offline maps + pinned locations**
+`OfflineMapView.kt` ek custom view hai jo pehle se download kiye hue XYZ tiles
+(`<app-external-files>/offline_tiles/{z}/{x}/{y}.png`) dikhata hai — koi Google
+Maps/Mapbox SDK nahi (unko internet chahiye hota hai, jo is app ke poore point
+ke against hai). Tiles na milen to bhi crash nahi hota, ek simple grid dikhta
+hai aur pins fir bhi plot hote hain. Tiles cut karne ke liye (ek baar, internet
+hone par) koi bhi standard XYZ tile-cutting tool use karo (e.g. QGIS export,
+`gdal2tiles.py`, ya `mb-util`) kisi chhote area ke OpenStreetMap data se — agar
+OSM data use karo to "© OpenStreetMap contributors" credit rakhna zaroori hai.
+Mesh Tools screen se current location pin kar sakte ho (label ke saath) — ye
+list disk pe persist hoti hai (`PinnedLocation.kt`).
+
+**4. Group sub-channels**
+`MeshMessage` mein ab ek `channel` field hai (default `"general"`, suggested:
+`general`/`medic`/`legal`, custom bhi add kar sakte ho). Ye SECURITY boundary
+NAHI hai — same passphrase = same encryption key, har channel har device pe
+relay hota hai chahe wo dekh raha ho ya nahi, sirf UI mein feed alag dikhta
+hai. Purane build wale phones jo channel field nahi jaante, unko sab kuch ek
+hi feed mein mix dikhega (graceful degrade).
+
+**5. Anonymous broadcast mode**
+Chat compose box mein ek "Anon" checkbox hai — check karne par us message ka
+sender naam sabko "Someone in group" dikhta hai (`MeshMessage.anonymous` +
+`displayName()`). Honest limitation: ye ek DISPLAY decision hai — senderId
+network pe wahi rehta hai (ACK/roll-call jaisi cheezon ke kaam karne ke liye
+zaroori), isliye ye traffic-analysis-level anonymity nahi deta, sirf casual
+"kisne bheja" ko UI mein hide karta hai.
+
+**6. On-device translation**
+`TranslationManager.kt` — agar tumne already Offline AI model set kiya hai
+(Settings > Offline AI), wahi model translation ke liye reuse hota hai (ek
+alag TFLite translation model download/manage karne ki zaroorat nahi). Quality
+utni hi achhi hogi jitna woh small LLM translation mein achha hai — casual
+gist ke liye theek hai, legal/medical-grade translation ke liye nahi.
+
+**7. Voice note transcript**
+`VoiceTranscriber.kt` — Android ke built-in on-device-preferred speech
+recognizer (`RecognizerIntent.EXTRA_PREFER_OFFLINE`) se live voice ko text mein
+badalta hai, Mesh Tools screen se test kar sakte ho. Honest limitation: ye
+guarantee nahi deta ki recognition sach mein on-device hi hui — depends on
+phone ke language pack settings — isliye transcript hamesha "AI transcript,
+verify by listening if possible" ke saath dikhta hai.
+
+**8. Mesh topology visualizer**
+`MeshTopologyView.kt` — sirf "main abhi/recently kis kis se juda hoon" dikhata
+hai (green line = recently active, dashed grey = purana). Poori mesh ka graph
+nahi (koi ek phone ko wo pata nahi chal sakta) — debugging/coverage-check ke
+liye hai, poore group ka naksha nahi.
+
+**9. Battery-sharing alert**
+`BatteryRelayMonitor.kt` — agar tumhare phone se abhi 3+ devices connected hain
+AUR battery 15% se neeche hai, ek high-priority notification aata hai ("charge
+dhoondo, warna in logon ka connection toot sakta hai"). `BleMeshService`'s
+already-existing periodic check loop mein hi ye check chalta hai, koi extra
+battery drain nahi.
+
 ## Agla step
 
 Bata do agar ye chahiye:

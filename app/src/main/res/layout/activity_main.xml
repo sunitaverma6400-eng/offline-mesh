@@ -20,7 +20,16 @@
         android:text="Mesh activity (15 min): 0 devices seen"
         android:textSize="12sp"
         android:textColor="#666666"
-        android:paddingBottom="8dp" />
+        android:paddingBottom="4dp" />
+
+    <TextView
+        android:id="@+id/textVersionWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="#B00020"
+        android:paddingBottom="8dp"
+        android:visibility="gone" />
 
     <!-- Pinned dispersal point - fixed above the chat, never scrolls away with
          normal messages. Hidden until someone broadcasts one. -->
@@ -163,6 +172,15 @@
                 android:layout_height="wrap_content"
                 android:text="⚙ Settings" />
 
+            <!-- Mesh intelligence, offline map, sub-channels/anonymous, translation,
+                 voice transcript, topology + battery-relay tools all live in one
+                 screen so the main chat layout doesn't get overloaded with buttons. -->
+            <Button
+                android:id="@+id/buttonMeshTools"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🧰 Mesh Tools" />
+
             <Button
                 android:id="@+id/buttonPanicWipe"
                 android:layout_width="wrap_content"
@@ -191,6 +209,15 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Urgent" />
+
+        <!-- Anonymous broadcast mode - when checked, this message's sender name shows
+             as "Someone in group" to everyone else. See MeshMessage.anonymous /
+             ChannelsAndAnonymity.kt for the honest limitations of this. -->
+        <CheckBox
+            android:id="@+id/checkboxAnonymous"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Anon" />
 
         <EditText
             android:id="@+id/editMessage"

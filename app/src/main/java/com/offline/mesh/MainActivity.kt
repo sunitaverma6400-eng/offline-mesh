@@ -6,7 +6,6 @@ import android.bluetooth.BluetoothAdapter
 import android.content.*
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.location.LocationManager
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
@@ -38,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var inputBox: EditText
     private lateinit var peerCountLabel: TextView
     private lateinit var meshHealthLabel: TextView
+    private lateinit var versionWarningLabel: TextView
     private lateinit var urgentCheckbox: CheckBox
     private lateinit var pinnedBannerContainer: LinearLayout
     private lateinit var pinnedBannerText: TextView
@@ -81,7 +81,12 @@ class MainActivity : AppCompatActivity() {
         id
     }
 
-    private val requiredPermissions: Array<String>
+    // Only these are actually needed for the mesh itself to work - Bluetooth
+    // roles, location (required for BLE scan pre-Android 12), and Wi-Fi Direct
+    // discovery. Camera/mic are for specific optional features (QR join, voice
+    // notes) and must NOT block the mesh from starting if declined - see the bug
+    // note on permissionLauncher below.
+    private val essentialPermissions: Array<String>
         get() {
             val perms = mutableListOf<String>()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -90,25 +95,42 @@ class MainActivity : AppCompatActivity() {
                 perms += Manifest.permission.BLUETOOTH_CONNECT
                 perms += Manifest.permission.POST_NOTIFICATIONS
             }
-            // Needed on all versions now: pre-S for BLE scan, and unconditionally
-            // for the "share my location" feature.
             perms += Manifest.permission.ACCESS_FINE_LOCATION
             perms += Manifest.permission.ACCESS_COARSE_LOCATION
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 perms += Manifest.permission.NEARBY_WIFI_DEVICES
             }
-            perms += Manifest.permission.CAMERA // for QR scanning
-            perms += Manifest.permission.RECORD_AUDIO // for voice notes
             return perms.toTypedArray()
         }
+
+    private val optionalPermissions: Array<String>
+        get() = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+
+    private val requiredPermissions: Array<String>
+        get() = essentialPermissions + optionalPermissions
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        if (results.values.all { it }) {
+        // BUG FIX: this used to require results.values.all { it } - meaning if
+        // someone declined just Camera (QR scan) or Mic (voice notes), the mesh
+        // service NEVER started at all, even with every Bluetooth/Location
+        // permission granted. That looked exactly like "connect hi nahi hota"
+        // from the outside, with no error explaining why. Now only the
+        // mesh-essential permissions gate starting the service; optional ones
+        // just disable their specific feature.
+        val essentialGranted = essentialPermissions.all { results[it] == true }
+        if (essentialGranted) {
             startMeshService()
+            val deniedOptional = optionalPermissions.filter { results[it] == false }
+            if (deniedOptional.isNotEmpty()) {
+                val names = deniedOptional.joinToString(", ") {
+                    if (it == Manifest.permission.CAMERA) "Camera (QR scan)" else "Microphone (voice notes)"
+                }
+                Toast.makeText(this, "Mesh chalu hai. $names off hai - Settings se baad mein on kar sakte ho.", Toast.LENGTH_LONG).show()
+            }
         } else {
-            Toast.makeText(this, "Bluetooth/Wi-Fi/Camera/Mic/Location permissions zaroori hain mesh ke liye", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Bluetooth/Location/Wi-Fi permissions zaroori hain mesh ke liye - inke bina connect nahi ho payega.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -188,16 +210,14 @@ class MainActivity : AppCompatActivity() {
                     adapter.addMessage(toDisplayMessage(msg, plain, isMine, trust))
                     recyclerView.scrollToPosition(adapter.itemCount - 1)
                     if (!isMine && msg.priority == Priority.URGENT) vibrateForUrgentIfNotSilent()
+                    updateGroupCountLabel()
                 }
                 BleMeshService.ACTION_PEER_COUNT_CHANGED -> {
                     val count = intent.getIntExtra(BleMeshService.EXTRA_PEER_COUNT, 0)
                     val pending = intent.getIntExtra(BleMeshService.EXTRA_PENDING_COUNT, 0)
                     val prefix = if (isDecoySession) "[Decoy] " else ""
                     peerCountLabel.text = "$prefix Connected peers: $count  |  Pending delivery: $pending"
-                    if (::meshHealthLabel.isInitialized) {
-                        val density = MessageStore.recentUniqueSenderCountForDisplay()
-                        meshHealthLabel.text = "Mesh activity (15 min): $density device(s) seen"
-                    }
+                    updateGroupCountLabel()
                 }
                 BleMeshService.ACTION_ROLLCALL_PROMPT -> {
                     val roundId = intent.getStringExtra(BleMeshService.EXTRA_ROLLCALL_ROUND_ID)
@@ -214,6 +234,10 @@ class MainActivity : AppCompatActivity() {
                         savePinnedDispersal(text, sender)
                         updatePinnedBanner()
                     }
+                }
+                BleMeshService.ACTION_DELIVERY_ACK -> {
+                    val ackedId = intent.getStringExtra(BleMeshService.EXTRA_ACKED_MESSAGE_ID)
+                    if (ackedId != null) adapter.markDelivered(ackedId)
                 }
             }
         }
@@ -246,19 +270,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toDisplayMessage(msg: MeshMessage, plain: String, isMine: Boolean, trust: TrustBadge): DisplayMessage {
+        // Anonymous broadcast mode: displayName() returns "Someone in group" when
+        // msg.anonymous is true, otherwise it's identical to msg.senderName - so this
+        // is a no-op for every message that isn't using anonymous mode.
+        val name = msg.displayName()
         return when (msg.type) {
             MessageType.IMAGE, MessageType.AUDIO ->
-                DisplayMessage(msg.senderName, "", msg.ts, isMine, msg.type, plain, msg.priority, trust)
+                DisplayMessage(name, "", msg.ts, isMine, msg.type, plain, msg.priority, trust, id = msg.id)
             MessageType.ROLLCALL_REQUEST ->
-                DisplayMessage(msg.senderName, "📋 Roll call — ${msg.senderName} ne poocha: sab safe ho?", msg.ts, isMine, msg.type, null, msg.priority, trust)
+                DisplayMessage(name, "📋 Roll call — $name ne poocha: sab safe ho?", msg.ts, isMine, msg.type, null, msg.priority, trust, id = msg.id)
             MessageType.ROLLCALL_RESPONSE ->
-                DisplayMessage(msg.senderName, "✅ ${msg.senderName} ne roll call mein 'safe' confirm kiya", msg.ts, isMine, msg.type, null, msg.priority, trust)
+                DisplayMessage(name, "✅ $name ne roll call mein 'safe' confirm kiya", msg.ts, isMine, msg.type, null, msg.priority, trust, id = msg.id)
             MessageType.DETAINED_ALERT ->
-                DisplayMessage(msg.senderName, "🚔 DETAINED ALERT (${msg.senderName} ne bheja) — $plain", msg.ts, isMine, msg.type, null, msg.priority, trust)
+                DisplayMessage(name, "🚔 DETAINED ALERT ($name ne bheja) — $plain", msg.ts, isMine, msg.type, null, msg.priority, trust, id = msg.id)
             MessageType.PINNED_DISPERSAL ->
-                DisplayMessage(msg.senderName, "📌 Dispersal point update (${msg.senderName}) — $plain", msg.ts, isMine, msg.type, null, msg.priority, trust)
+                DisplayMessage(name, "📌 Dispersal point update ($name) — $plain", msg.ts, isMine, msg.type, null, msg.priority, trust, id = msg.id)
             else ->
-                DisplayMessage(msg.senderName, plain, msg.ts, isMine, msg.type, null, msg.priority, trust)
+                DisplayMessage(name, plain, msg.ts, isMine, msg.type, null, msg.priority, trust, id = msg.id)
         }
     }
 
@@ -282,6 +310,7 @@ class MainActivity : AppCompatActivity() {
         val appPin = prefs.getString("app_pin", null)
         if (appPin.isNullOrEmpty()) {
             // No lock configured - just run normally.
+            recordCheckIn()
             initUiAndMesh()
             return
         }
@@ -304,6 +333,7 @@ class MainActivity : AppCompatActivity() {
                     entered == appPin -> {
                         activeProfile = "main"
                         isDecoySession = false
+                        recordCheckIn()
                         dialog.dismiss()
                         initUiAndMesh()
                     }
@@ -327,6 +357,9 @@ class MainActivity : AppCompatActivity() {
         inputBox = findViewById(R.id.editMessage)
         peerCountLabel = findViewById(R.id.textPeerCount)
         urgentCheckbox = findViewById(R.id.checkboxUrgent)
+        val anonymousCheckbox = findViewById<CheckBox>(R.id.checkboxAnonymous)
+        anonymousCheckbox.isChecked = ChannelsAndAnonymity.getAnonymousDefault(this)
+        val meshToolsButton = findViewById<Button>(R.id.buttonMeshTools)
         val sendButton = findViewById<Button>(R.id.buttonSend)
         val showQrButton = findViewById<Button>(R.id.buttonShowQr)
         val scanQrButton = findViewById<Button>(R.id.buttonScanQr)
@@ -349,6 +382,7 @@ class MainActivity : AppCompatActivity() {
         pinnedBannerText = findViewById(R.id.textPinnedBanner)
         val clearPinButton = findViewById<Button>(R.id.buttonClearPin)
         meshHealthLabel = findViewById(R.id.textMeshHealth)
+        versionWarningLabel = findViewById(R.id.textVersionWarning)
 
         adapter = ChatAdapter(mutableListOf())
         recyclerView.layoutManager = LinearLayoutManager(this)
@@ -364,12 +398,20 @@ class MainActivity : AppCompatActivity() {
             val text = inputBox.text.toString().trim()
             if (text.isNotEmpty()) {
                 val priority = if (urgentCheckbox.isChecked) Priority.URGENT else Priority.NORMAL
-                meshService?.sendMessage(text, priority)
-                adapter.addMessage(DisplayMessage("You", text, System.currentTimeMillis(), true, priority = priority, trust = TrustBadge.MINE))
+                val channel = ChannelsAndAnonymity.getActiveChannel(this)
+                val anonymous = anonymousCheckbox.isChecked
+                val sentId = meshService?.sendMessage(text, priority, channel, anonymous) ?: ""
+                val displayName = if (anonymous) "Someone in group" else "You"
+                adapter.addMessage(DisplayMessage(displayName, text, System.currentTimeMillis(), true, priority = priority, trust = TrustBadge.MINE, id = sentId))
                 recyclerView.scrollToPosition(adapter.itemCount - 1)
                 inputBox.text.clear()
                 urgentCheckbox.isChecked = false
+                ChannelsAndAnonymity.setAnonymousDefault(this, anonymousCheckbox.isChecked)
             }
+        }
+
+        meshToolsButton.setOnClickListener {
+            startActivity(Intent(this, MeshToolsActivity::class.java))
         }
 
         showQrButton.setOnClickListener { showGroupQrDialog() }
@@ -399,6 +441,7 @@ class MainActivity : AppCompatActivity() {
             addAction(BleMeshService.ACTION_ROLLCALL_PROMPT)
             addAction(BleMeshService.ACTION_ROLLCALL_UPDATE)
             addAction(BleMeshService.ACTION_PIN_UPDATED)
+            addAction(BleMeshService.ACTION_DELIVERY_ACK)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(messageReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -407,6 +450,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         updatePinnedBanner()
+        updateGroupCountLabel()
         ensureBluetoothOnThenRequestPermissions()
     }
 
@@ -474,21 +518,52 @@ class MainActivity : AppCompatActivity() {
         layout.addView(silentModeCheckbox)
         layout.addView(rotateIdCheckbox)
         layout.addView(rotateIdInfo)
+
+        val deadManCheckbox = CheckBox(this).apply {
+            text = "Dead-man's switch (opt-in)"
+            isChecked = prefs.getBoolean("deadman_enabled", false)
+        }
+        val deadManHoursInput = EditText(this).apply {
+            hint = "Check-in na kiya to alert bhejo (N hours)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            val current = prefs.getLong("deadman_hours", 0L)
+            if (current > 0) setText(current.toString())
+        }
+        val deadManInfo = TextView(this).apply {
+            setPadding(0, 0, 0, 10)
+            textSize = 12f
+            setTextColor(0xFF666666.toInt())
+            text = "ON karke ek N-hour window set karo. Agar itne time tak tumne app unlock nahi kiya ya 'I'm safe' nahi dabaya, group ko ek URGENT alert apne aap chala jaayega ('check-in nahi hua'). Har check-in (unlock/I'm safe) par timer reset ho jaata hai. Honest limitation: ye sirf tab kaam karta hai jab mesh service background mein chalti rahe (phone on, Bluetooth on) - agar phone hi band/dead ho jaaye to koi alert nahi ja sakta."
+        }
+        layout.addView(deadManCheckbox)
+        layout.addView(deadManHoursInput)
+        layout.addView(deadManInfo)
         layout.addView(panicShortcutInfo)
+
+        val scrollWrapper = ScrollView(this).apply { addView(layout) }
 
         AlertDialog.Builder(this)
             .setTitle("Lock screen settings")
             .setMessage("Agar App PIN set karoge, to app khulte waqt PIN maangega. Duress PIN dabane par ek khaali 'decoy' chat khulegi jo real data ko bilkul touch nahi karti.\n\nOffline AI: internet ke bina general sawaal-jawab ke liye ek chhota on-device model — pehle se internet pe download karke .task file yahan 'import' karni hogi. Ye real info-retrieval nahi hai, sirf ek fixed model ke andar jo pehle se baked hai — kabhi-kabhi galat/purana jawab de sakta hai, isliye important cheezein (legal rights, medical, safety) humans se hi confirm karo.")
-            .setView(layout)
+            .setView(scrollWrapper)
             .setPositiveButton("Save") { _, _ ->
                 val hours = autoWipeInput.text.toString().trim().toLongOrNull() ?: 0L
+                val deadManHours = deadManHoursInput.text.toString().trim().toLongOrNull() ?: 0L
+                val deadManWasEnabled = prefs.getBoolean("deadman_enabled", false)
                 prefs.edit()
                     .putString("app_pin", appPinInput.text.toString().trim())
                     .putString("duress_pin", duressPinInput.text.toString().trim())
                     .putLong("auto_wipe_hours", hours)
                     .putBoolean("silent_mode", silentModeCheckbox.isChecked)
                     .putBoolean("rotate_device_id", rotateIdCheckbox.isChecked)
+                    .putBoolean("deadman_enabled", deadManCheckbox.isChecked)
+                    .putLong("deadman_hours", deadManHours)
                     .apply()
+                // Turning it on (or re-saving while on) should start the timer fresh,
+                // not immediately fire because "last checkin" was never set before.
+                if (deadManCheckbox.isChecked && (!deadManWasEnabled || deadManHours > 0)) {
+                    recordCheckIn()
+                }
                 applyAutoWipeIfConfigured()
                 Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
             }
@@ -603,21 +678,25 @@ class MainActivity : AppCompatActivity() {
             val original = BitmapFactory.decodeStream(input)
             input.close()
 
-            // Downscale hard - this is going over BLE/Wi-Fi Direct, not broadband.
-            // Max 480px on the long side, JPEG quality 50, keeps payloads small.
-            val scaled = downscaleBitmap(original, 480)
+            // Wi-Fi Direct (which every image effectively goes over now - BLE's
+            // payload limit is too small for any real photo) has no practical
+            // size ceiling, so there's no need for the old BLE-era 480px/quality-50
+            // defaults - that was leaving images looking noticeably worse than
+            // necessary. 1280px keeps a phone photo sharp on screen while still
+            // being reasonable to hold in memory/relay across the mesh.
+            val scaled = downscaleBitmap(original, 1280)
             val outputStream = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 50, outputStream)
+            scaled.compress(Bitmap.CompressFormat.JPEG, 82, outputStream)
             val base64 = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
 
             val priority = if (urgentCheckbox.isChecked) Priority.URGENT else Priority.NORMAL
-            meshService?.sendImage(base64, priority)
-            adapter.addMessage(DisplayMessage("You", "", System.currentTimeMillis(), true, MessageType.IMAGE, base64, priority, TrustBadge.MINE))
+            val sentId = meshService?.sendImage(base64, priority) ?: ""
+            adapter.addMessage(DisplayMessage("You", "", System.currentTimeMillis(), true, MessageType.IMAGE, base64, priority, TrustBadge.MINE, id = sentId))
             recyclerView.scrollToPosition(adapter.itemCount - 1)
 
             val sizeKb = base64.length / 1024
-            if (sizeKb > 400) {
-                Toast.makeText(this, "Image thodi badi hai (~${sizeKb}KB) - Wi-Fi Direct peer chahiye deliver hone ke liye", Toast.LENGTH_LONG).show()
+            if (sizeKb > 800) {
+                Toast.makeText(this, "Image badi hai (~${sizeKb}KB) - Wi-Fi Direct peer chahiye deliver hone ke liye, BLE-only peers tak nahi pahunchegi", Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             Toast.makeText(this, "Image bhejne mein error aayi", Toast.LENGTH_SHORT).show()
@@ -686,8 +765,8 @@ class MainActivity : AppCompatActivity() {
             val sizeKb = bytes.size / 1024
             val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
             val priority = if (urgentCheckbox.isChecked) Priority.URGENT else Priority.NORMAL
-            meshService?.sendAudio(base64, priority)
-            adapter.addMessage(DisplayMessage("You", "", System.currentTimeMillis(), true, MessageType.AUDIO, base64, priority, TrustBadge.MINE))
+            val sentId = meshService?.sendAudio(base64, priority) ?: ""
+            adapter.addMessage(DisplayMessage("You", "", System.currentTimeMillis(), true, MessageType.AUDIO, base64, priority, TrustBadge.MINE, id = sentId))
             recyclerView.scrollToPosition(adapter.itemCount - 1)
             if (sizeKb > 400) {
                 Toast.makeText(this, "Voice note ~${sizeKb}KB hai - Wi-Fi Direct peer chahiye deliver hone ke liye", Toast.LENGTH_LONG).show()
@@ -706,27 +785,29 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Location permission chahiye pin share karne ke liye", Toast.LENGTH_SHORT).show()
             return
         }
-        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        try {
-            val providers = locationManager.getProviders(true)
-            var lastKnown: android.location.Location? = null
-            for (provider in providers) {
-                val loc = locationManager.getLastKnownLocation(provider) ?: continue
-                if (lastKnown == null || loc.time > lastKnown!!.time) lastKnown = loc
-            }
-            if (lastKnown == null) {
+        val priority = if (urgentCheckbox.isChecked) Priority.URGENT else Priority.NORMAL
+        Toast.makeText(this, "Location le rahe hain...", Toast.LENGTH_SHORT).show()
+        // Was: getLastKnownLocation() only, which can be stale/null for a long
+        // time. Now actively asks for a fresh fix first (with a fallback to the
+        // old cached behavior), see LocationHelper for why.
+        LocationHelper.getBestEffortLocation(this) { loc ->
+            if (loc == null) {
                 Toast.makeText(this, "Location abhi available nahi - GPS/network on karke thoda wait karo", Toast.LENGTH_LONG).show()
-                return
+                return@getBestEffortLocation
             }
-            val lat = lastKnown!!.latitude
-            val lon = lastKnown!!.longitude
-            val priority = if (urgentCheckbox.isChecked) Priority.URGENT else Priority.NORMAL
-            meshService?.sendLocation(lat, lon, priority)
-            val text = "$lat,$lon"
-            adapter.addMessage(DisplayMessage("You", text, System.currentTimeMillis(), true, MessageType.LOCATION, null, priority, TrustBadge.MINE))
+            val lat = loc.latitude
+            val lon = loc.longitude
+            val sentId = meshService?.sendLocation(lat, lon, priority) ?: ""
+            val msg = DisplayMessage("You", "$lat,$lon", System.currentTimeMillis(), true, MessageType.LOCATION, null, priority, TrustBadge.MINE, id = sentId)
+            adapter.addMessage(msg)
             recyclerView.scrollToPosition(adapter.itemCount - 1)
-        } catch (e: SecurityException) {
-            Toast.makeText(this, "Location permission missing", Toast.LENGTH_SHORT).show()
+
+            // Best-effort: resolve to a real, human-readable address for local
+            // display. Needs network, so this silently no-ops when offline -
+            // the pin above has already been sent to the mesh either way.
+            LocationHelper.reverseGeocode(this, loc) { address ->
+                if (address != null) adapter.setLocationLabel(msg, address)
+            }
         }
     }
 
@@ -742,38 +823,72 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sendSos() {
-        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        var locationSuffix = ""
-        try {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                var lastKnown: android.location.Location? = null
-                for (provider in locationManager.getProviders(true)) {
-                    val loc = locationManager.getLastKnownLocation(provider) ?: continue
-                    if (lastKnown == null || loc.time > lastKnown!!.time) lastKnown = loc
-                }
-                if (lastKnown != null) {
-                    locationSuffix = " — location: ${lastKnown!!.latitude},${lastKnown!!.longitude}"
-                }
-            }
-        } catch (e: SecurityException) { }
-
-        val text = "🆘 SOS — help chahiye!$locationSuffix"
-        meshService?.sendMessage(text, Priority.URGENT)
-        adapter.addMessage(DisplayMessage("You", text, System.currentTimeMillis(), true, priority = Priority.URGENT, trust = TrustBadge.MINE))
-        recyclerView.scrollToPosition(adapter.itemCount - 1)
-        Toast.makeText(this, "SOS bhej diya", Toast.LENGTH_SHORT).show()
+        // SOS is urgent, so we don't wait long for a fix: a short timeout for a
+        // fresh location, falling back to cached instantly if that's not viable.
+        // This still beats the old behavior (cached-only, sometimes null/stale)
+        // without meaningfully delaying the alert itself.
+        LocationHelper.getBestEffortLocation(this, timeoutMs = 2500L) { loc ->
+            val locationSuffix = if (loc != null) " — location: ${loc.latitude},${loc.longitude}" else ""
+            val text = "🆘 SOS — help chahiye!$locationSuffix"
+            meshService?.sendMessage(text, Priority.URGENT)
+            adapter.addMessage(DisplayMessage("You", text, System.currentTimeMillis(), true, priority = Priority.URGENT, trust = TrustBadge.MINE))
+            recyclerView.scrollToPosition(adapter.itemCount - 1)
+            Toast.makeText(this, "SOS bhej diya", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun sendImSafe() {
         val text = "✅ I'm safe"
-        meshService?.sendMessage(text, Priority.NORMAL)
-        adapter.addMessage(DisplayMessage("You", text, System.currentTimeMillis(), true, priority = Priority.NORMAL, trust = TrustBadge.MINE))
+        val sentId = meshService?.sendMessage(text, Priority.NORMAL) ?: ""
+        adapter.addMessage(DisplayMessage("You", text, System.currentTimeMillis(), true, priority = Priority.NORMAL, trust = TrustBadge.MINE, id = sentId))
         recyclerView.scrollToPosition(adapter.itemCount - 1)
+        recordCheckIn()
+    }
+
+    // ---------------- Dead-man's switch (opt-in, Settings) ----------------
+
+    /** Call whenever the person does something that counts as "actively using the
+     *  phone and OK" - unlocking with the real PIN, or tapping "I'm safe". Resets
+     *  the dead-man's-switch timer in BleMeshService and re-arms it (clears the
+     *  "already triggered" flag) so a future silence period can trigger it again. */
+    private fun recordCheckIn() {
+        val prefs = getSharedPreferences("mesh_prefs", MODE_PRIVATE)
+        prefs.edit()
+            .putLong("deadman_last_checkin_ts", System.currentTimeMillis())
+            .putBoolean("deadman_triggered", false)
+            .apply()
     }
 
     // ---------------- Roll call / safety check ----------------
+
+    /** Updates the "Mesh activity" line to also show how many distinct devices
+     *  this phone has seen chatting so far this session (RollCallManager's
+     *  roster) - this is the practical "kitne logo se baat ho sakti hai" number:
+     *  not a hard cap, just who this phone currently knows is in the group.
+     *  Also refreshes the version-mismatch warning below it (see VersionTracker). */
+    private fun updateGroupCountLabel() {
+        if (!::meshHealthLabel.isInitialized) return
+        val density = MessageStore.recentUniqueSenderCountForDisplay()
+        val known = RollCallManager.knownParticipantCount()
+        meshHealthLabel.text = "Mesh activity (15 min): $density device(s) seen  |  Group: $known known (aap ko chhodke)"
+        updateVersionWarning()
+    }
+
+    private fun updateVersionWarning() {
+        if (!::versionWarningLabel.isInitialized) return
+        val mismatched = VersionTracker.mismatched()
+        if (mismatched.isEmpty()) {
+            versionWarningLabel.visibility = View.GONE
+            return
+        }
+        val olderCount = mismatched.count { it.value.second < AppVersion.CODE }
+        val newerCount = mismatched.count { it.value.second > AppVersion.CODE }
+        val parts = mutableListOf<String>()
+        if (olderCount > 0) parts.add("$olderCount purane version (update karwao)")
+        if (newerCount > 0) parts.add("$newerCount naye version (tum update karo)")
+        versionWarningLabel.text = "⚠️ Tum ${AppVersion.NAME} pe ho — ${parts.joinToString(", ")} pe hain. Mixed versions mein naye safety features (roll call, detained alert, pin) sabke liye kaam nahi karenge."
+        versionWarningLabel.visibility = View.VISIBLE
+    }
 
     private fun confirmAndStartRollCall() {
         AlertDialog.Builder(this)
@@ -855,20 +970,19 @@ class MainActivity : AppCompatActivity() {
         layout.addView(nameInput)
         layout.addView(locationInput)
 
-        // Best-effort auto-fill from last-known GPS - editable, not required.
-        try {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                var lastKnown: android.location.Location? = null
-                for (provider in locationManager.getProviders(true)) {
-                    val loc = locationManager.getLastKnownLocation(provider) ?: continue
-                    if (lastKnown == null || loc.time > lastKnown!!.time) lastKnown = loc
+        // Best-effort auto-fill from GPS - editable, not required. Fresh fix
+        // preferred (short timeout so the dialog doesn't feel stuck), falls
+        // back to cached; if a real address resolves, replaces the coordinates
+        // with something the legal/family contact can actually recognize.
+        LocationHelper.getBestEffortLocation(this, timeoutMs = 2500L) { loc ->
+            if (loc == null) return@getBestEffortLocation
+            locationInput.setText("${loc.latitude},${loc.longitude}")
+            LocationHelper.reverseGeocode(this, loc) { address ->
+                if (address != null && locationInput.text.toString() == "${loc.latitude},${loc.longitude}") {
+                    locationInput.setText(address)
                 }
-                if (lastKnown != null) locationInput.setText("${lastKnown!!.latitude},${lastKnown!!.longitude}")
             }
-        } catch (e: SecurityException) { }
+        }
 
         AlertDialog.Builder(this)
             .setTitle("🚔 Detained-person alert")
@@ -879,8 +993,8 @@ class MainActivity : AppCompatActivity() {
                 val location = locationInput.text.toString().trim().ifEmpty { "location unknown" }
                 val timeStr = java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                 val details = "$name — last seen at $location, $timeStr"
-                meshService?.sendDetainedAlert(details)
-                adapter.addMessage(DisplayMessage("You", "🚔 DETAINED ALERT (aapne bheja) — $details", System.currentTimeMillis(), true, priority = Priority.URGENT, trust = TrustBadge.MINE))
+                val sentId = meshService?.sendDetainedAlert(details) ?: ""
+                adapter.addMessage(DisplayMessage("You", "🚔 DETAINED ALERT (aapne bheja) — $details", System.currentTimeMillis(), true, priority = Priority.URGENT, trust = TrustBadge.MINE, id = sentId))
                 recyclerView.scrollToPosition(adapter.itemCount - 1)
                 Toast.makeText(this, "Detained alert bhej diya", Toast.LENGTH_SHORT).show()
             }
@@ -1017,6 +1131,8 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Haan, delete karo") { _, _ ->
                 meshService?.panicWipe()
                 adapter.clear()
+                updateGroupCountLabel()
+                clearPinnedDispersal()
                 Toast.makeText(this, "Sab data delete ho gaya", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)

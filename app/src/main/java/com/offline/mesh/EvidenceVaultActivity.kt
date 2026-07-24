@@ -283,8 +283,32 @@ class EvidenceVaultActivity : AppCompatActivity() {
                     Toast.makeText(this, "Duress PIN set ho gaya", Toast.LENGTH_SHORT).show()
                 }
             }
+            .setNeutralButton("Export encrypted backup") { _, _ -> exportVaultBackup() }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    /** Zips this namespace's already-encrypted vault files into this app's own
+     *  external-files folder (no storage permission needed) - see
+     *  EvidenceVaultManager.exportEncryptedBackup for exactly what that means. */
+    private fun exportVaultBackup() {
+        val ns = currentNamespace
+        val pin = currentPin
+        if (ns == null || pin == null) return
+        try {
+            val outFile = EvidenceVaultManager.exportEncryptedBackup(this, pin, ns)
+            if (outFile != null) {
+                AlertDialog.Builder(this)
+                    .setTitle("Backup ban gaya")
+                    .setMessage("Encrypted backup yahan save hua hai (abhi bhi PIN-protected, plaintext nahi hai):\n\n${outFile.absolutePath}\n\nIse USB se PC pe copy karo ya kisi external SD/OTG drive pe move karo — phone confiscate ho to bhi evidence safe rahega.")
+                    .setPositiveButton("OK", null)
+                    .show()
+            } else {
+                Toast.makeText(this, "Is vault mein export karne ke liye kuch nahi hai", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Export fail ho gaya", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ---------------- Wipe (scoped to current namespace only) ----------------
