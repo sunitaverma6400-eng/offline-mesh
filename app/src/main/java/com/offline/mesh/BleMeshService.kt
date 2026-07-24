@@ -731,7 +731,6 @@ class BleMeshService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    @SuppressLint("MissingPermission")
     private fun relayToAllPeers(msg: MeshMessage) {
         // BLE: only if it fits in a safe GATT write
         if (msg.approxSizeBytes() <= MeshMessage.BLE_SAFE_PAYLOAD_BYTES) {
